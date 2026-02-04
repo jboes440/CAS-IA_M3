@@ -524,6 +524,7 @@ USING (
         ListPrice AS price,
         Size AS size,
         Weight AS weight,
+        ProductCategoryId As product_category_id,
         rowguid            AS rowguid,
         ModifiedDate       AS modified_date
     FROM bronze.product
@@ -539,6 +540,7 @@ WHEN MATCHED AND ( -- ok la ligne existe, ajoute les conditions suivantes, il y 
     OR tgt.price    != src.price
     OR tgt.size    != src.size
     OR tgt.weight    != src.weight
+    OR tgt.product_category_id != src.product_category_id
     OR tgt.rowguid          != src.rowguid
     OR tgt.modified_date    != src.modified_date
     -- etc. for any columns you want to track changes on
@@ -568,6 +570,7 @@ USING (
         ListPrice AS price,
         Size AS size,
         Weight AS weight,
+        ProductCategoryID AS product_category_id,
         rowguid            AS rowguid,
         ModifiedDate       AS modified_date
     FROM bronze.product
@@ -585,6 +588,7 @@ WHEN NOT MATCHED THEN
     price,
     size,
     weight,
+    product_category_id,
     rowguid,
     modified_date,
     _tf_valid_from,
@@ -600,6 +604,7 @@ WHEN NOT MATCHED THEN
     src.price,
     src.size,
     src.weight,
+    src.product_category_id,
     src.rowguid,
     src.modified_date,
     load_date,        -- _tf_valid_from
@@ -833,6 +838,81 @@ WHEN NOT MATCHED THEN
     src.product_model_id,
     src.product_description_id,
     src.culture,
+    src.rowguid,
+    src.modified_date,
+    load_date,        -- _tf_valid_from
+    NULL,             -- _tf_valid_to
+    load_date,        -- _tf_create_date
+    load_date         -- _tf_update_date
+  )
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ## Incremental load of ProductCategory
+
+-- COMMAND ----------
+
+MERGE INTO silver.product_category AS tgt -- tgt target
+-- USING = source
+USING (
+    SELECT
+        ProductCategoryID     AS product_category_id,
+        Name             AS name,
+        rowguid                  AS rowguid,
+        ModifiedDate             AS modified_date
+    FROM bronze.productcategory
+) AS src -- source pour le merge, la tableau en bronze
+ON tgt.product_category_id = src.product_category_id
+  AND tgt._tf_valid_to IS NULL   -- Only match against 'active' records in silver, prendre seulement la ligne valide et pas l'historique SCD2
+  
+WHEN MATCHED AND ( -- ok la ligne existe, ajoute les conditions suivantes, il y a une modificaiton sur une colonnes
+       tgt.name  != src.name -- différence entre les colonnes
+    OR tgt.rowguid          != src.rowguid
+    OR tgt.modified_date    != src.modified_date
+    -- etc. for any columns you want to track changes on
+) AND tgt._tf_valid_to IS NULL THEN
+  -- 1) Close the old record by setting _tf_valid_to, fermer la ligne en fermant la date
+  UPDATE SET
+    tgt._tf_valid_to    = load_date,
+    tgt._tf_update_date = load_date
+  
+WHEN NOT MATCHED BY SOURCE AND tgt._tf_valid_to IS NULL THEN
+  -- 2) Close the deleted record by setting _tf_valid_to
+  UPDATE SET 
+    tgt._tf_valid_to    = load_date, -- le puls important c'est de clôturer la ligne
+    tgt._tf_update_date = load_date -- rajout de la date de modification
+;
+
+-- COMMAND ----------
+
+MERGE INTO silver.product_category AS tgt
+USING (
+    SELECT
+        ProductcategoryID     AS product_category_id,
+        Name              AS name,
+        rowguid                  AS rowguid,
+        ModifiedDate             AS modified_date
+    FROM bronze.productcategory
+) AS src
+ON tgt.product_category_id = src.product_category_id
+  AND tgt._tf_valid_to IS NULL   -- Only match against 'active' records in silver
+  
+WHEN NOT MATCHED THEN
+  -- 3) Insert NEW records (either truly new address_id or a new version if the old one was just closed), nouvelle entrée dans la table car inexistant
+  INSERT (
+    product_category_id,
+    name,
+    rowguid,
+    modified_date,
+    _tf_valid_from,
+    _tf_valid_to,
+    _tf_create_date,
+    _tf_update_date
+  )
+  VALUES (
+    src.product_category_id,
+    src.name,
     src.rowguid,
     src.modified_date,
     load_date,        -- _tf_valid_from

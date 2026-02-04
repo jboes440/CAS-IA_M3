@@ -22,7 +22,7 @@ SELECT
     10000 * YEAR(soh.order_date) + 100 * MONTH(soh.order_date) + DAY(soh.order_date) AS _tf_dim_calendar_id,
     COALESCE(cust._tf_dim_customer_id, -9) AS _tf_dim_customer_id,
     COALESCE(geo._tf_dim_geography_id, -9) AS _tf_dim_geography_id,
-
+    COALESCE(prod._tf_dim_product_id, -9) AS _tf_dim_product_id,
     --
     COALESCE(TRY_CAST(sod.order_qty AS SMALLINT), 0) AS sales_order_qty,
     COALESCE(TRY_CAST(sod.unit_price AS DECIMAL(19,4)), 0) AS sales_unit_price,
@@ -39,7 +39,10 @@ SELECT
       LEFT OUTER JOIN silver.address a 
         ON soh.bill_to_address_id = a.address_id AND a._tf_valid_to IS NULL
         LEFT OUTER JOIN gold.dim_geography geo 
-          ON a.address_id = geo.geo_address_id
+      LEFT OUTER JOIN silver.product p 
+        ON sod.product_id = p.product_id AND c._tf_valid_to IS NULL
+        LEFT OUTER JOIN gold.dim_product prod
+          ON p.product_id = prod.prod_product_id
   WHERE sod._tf_valid_to IS NULL;
 
 SELECT * FROM _tmp_fact_sales;
@@ -56,6 +59,7 @@ WHEN MATCHED AND (
     tgt._tf_dim_calendar_id != src._tf_dim_calendar_id OR
     tgt._tf_dim_customer_id != src._tf_dim_customer_id OR
     tgt._tf_dim_geography_id != src._tf_dim_geography_id OR
+    tgt._tf_dim_product_id != src._tf_dim_product_id OR
     tgt.sales_order_qty != src.sales_order_qty OR
     tgt.sales_unit_price != src.sales_unit_price OR
     tgt.sales_unit_price_discount != src.sales_unit_price_discount OR
@@ -66,6 +70,7 @@ WHEN MATCHED AND (
     _tf_dim_calendar_id = src._tf_dim_calendar_id,
     _tf_dim_customer_id = src._tf_dim_customer_id,
     _tf_dim_geography_id = src._tf_dim_geography_id,
+    _tf_dim_product_id = src._tf_dim_product_id,
     tgt.sales_order_qty = src.sales_order_qty,
     tgt.sales_unit_price = src.sales_unit_price,
     tgt.sales_unit_price_discount = src.sales_unit_price_discount,
@@ -81,6 +86,7 @@ WHEN NOT MATCHED THEN
     tgt._tf_dim_calendar_id,
     tgt._tf_dim_customer_id,
     tgt._tf_dim_geography_id,
+    tgt._tf_dim_product_id,
     tgt.sales_order_qty,
     tgt.sales_unit_price,
     tgt.sales_unit_price_discount,
@@ -94,6 +100,7 @@ WHEN NOT MATCHED THEN
     src._tf_dim_calendar_id,
     src._tf_dim_customer_id,
     src._tf_dim_geography_id,
+    src._tf_dim_product_id,
     src.sales_order_qty,
     src.sales_unit_price,
     src.sales_unit_price_discount,

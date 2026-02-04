@@ -162,7 +162,8 @@ USING (
         COALESCE(TRY_CAST(cost AS DECIMAL(38,6)), 0) AS prod_cost,
         COALESCE(TRY_CAST(price AS DECIMAL(38,6)), 0) AS prod_price,
         COALESCE(TRY_CAST(size AS STRING), 'N/A') AS prod_size,
-        COALESCE(TRY_CAST(weight AS DECIMAL(19,4)), 0) AS prod_weight
+        COALESCE(TRY_CAST(weight AS DECIMAL(19,4)), 0) AS prod_weight,
+        COALESCE(TRY_CAST(product_category_id AS INT), -9) AS prod_product_category_id
     FROM silver.product
     WHERE _tf_valid_to IS NULL
 ) AS src
@@ -175,7 +176,8 @@ WHEN MATCHED AND (
     tgt.prod_cost != src.prod_cost OR
     tgt.prod_price != src.prod_price OR
     tgt.prod_size != src.prod_size OR
-    tgt.prod_weight != src.prod_weight
+    tgt.prod_weight != src.prod_weight OR
+    tgt.prod_product_category_id != src.prod_product_category_id
 ) THEN 
   
   UPDATE SET 
@@ -186,6 +188,7 @@ WHEN MATCHED AND (
     tgt.prod_price = src.prod_price,
     tgt.prod_size = src.prod_size,
     tgt.prod_weight = src.prod_weight,
+    tgt.prod_product_category_id = src.prod_product_category_id,
     tgt._tf_update_date = load_date
 
 WHEN NOT MATCHED THEN
@@ -199,6 +202,7 @@ WHEN NOT MATCHED THEN
     prod_price,
     prod_size,
     prod_weight,
+    prod_product_category_id,
     _tf_create_date,
     _tf_update_date
   )
@@ -211,6 +215,42 @@ WHEN NOT MATCHED THEN
     src.prod_price,
     src.prod_size,
     src.prod_weight,
+    src.prod_product_category_id,
+    load_date,
+    load_date
+  )
+
+-- COMMAND ----------
+
+MERGE INTO gold.dim_product_category AS tgt
+USING (
+    SELECT
+        CAST(product_category_id AS INT) AS cat_product_category_id,
+        COALESCE(TRY_CAST(name AS STRING), 'N/A') AS cat_name
+    FROM silver.product_category
+    WHERE _tf_valid_to IS NULL
+) AS src
+ON tgt.cat_product_category_id = src.cat_product_category_id
+
+WHEN MATCHED AND (
+    tgt.cat_name != src.cat_name
+) THEN 
+  
+  UPDATE SET 
+    tgt.cat_name = src.cat_name,
+    tgt._tf_update_date = load_date
+
+WHEN NOT MATCHED THEN
+  
+  INSERT (
+    cat_product_category_id,
+    cat_name,
+    _tf_create_date,
+    _tf_update_date
+  )
+  VALUES (
+    src.cat_product_category_id,
+    src.cat_name,
     load_date,
     load_date
   )
